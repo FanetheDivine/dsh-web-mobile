@@ -14,6 +14,10 @@ const SRC = readFileSync(
   fileURLToPath(new URL('../src/client/effects/model-menu-anchor.ts', import.meta.url)),
   'utf8',
 )
+const LAYOUT = readFileSync(
+  fileURLToPath(new URL('../src/client/styles/layout.css.ts', import.meta.url)),
+  'utf8',
+)
 
 test('滚动/改变尺寸只重算缓存节点，绝不查询', () => {
   const start = SRC.indexOf('const follow = ')
@@ -44,4 +48,34 @@ test('菜单能放入视口时贴触发器右缘，越界时回退卡片居中',
   const start = SRC.indexOf('const place = ')
   const end = SRC.indexOf('const refresh = ', start)
   assert.ok(!SRC.slice(start, end).includes('querySelector'), 'place() 只能读取缓存锚点')
+})
+
+// 手机档「推理等级」面板收窄的选择器契约（2026-10-11）。
+//
+// 真机量到的两套 DOM（dsh-client-ui-model-selection 0.2.0-rc.2，393×844，真实宿主包）：
+//   档位面板  DIV._surface_ri079_1._7KE1Ra_menu[role=menu]
+//               > DIV._material_ri079_21
+//               > button._7KE1Ra_option[role=menuitemradio]        ← 直接子级
+//   模型面板  DIV._surface_ri079_1._7KE1Ra_menu[role=group]
+//               > DIV._material_ri079_21
+//               > DIV._7KE1Ra_groups.scrollable[role=menu]
+//                   > SECTION._group_121p8_1[role=group] > button[role=menuitemradio]
+// 宿主按 pane 决定 role（model ⇒ group，其余 ⇒ menu），所以「role=menu + 直接子级
+// menuitemradio」两条一起才唯一选中档位面板。只留任一条件都不安全：去掉 role 会命中
+// 模型面板内层的 _groups 容器；把直接子级放宽成后代会命中模型面板外壳。
+// 实测反例（2026-10-11 独立验证）：`[role="group"]:has([role="menuitemradio"])` 在手机档
+// 命中模型面板（248→216px）、档位面板仍是 248px，与预期正好相反；模型面板在本机没有
+// input[role="searchbox"]，所以 `:not(:has(input))` 也拦不住。
+test('手机档档位面板选择器只命中档位面板', () => {
+  const at = LAYOUT.indexOf('Phone reasoning-effort list is compact')
+  assert.notEqual(at, -1, '档位面板规则丢失')
+  const block = LAYOUT.slice(LAYOUT.lastIndexOf('/*', at), LAYOUT.indexOf('/* --- Fix composer row overflow', at))
+  assert.match(block, /@media \(max-width: 767px\) and \(pointer: coarse\)/, '只在手机档生效')
+  assert.match(block, /\[class\*="_7KE1Ra_menu"\]\[role="menu"\]/, '档位面板外壳的 role 是 menu')
+  assert.match(block, /:has\(> \[role="menuitemradio"\]\)/, '档位面板的 radio 是外壳的直接子级')
+  assert.match(block, /min-width: 0 !important/, '宿主 min-width:240px 不收窄就白改')
+  // 注释里引用了被实测证伪的写法，所以只对去掉注释的规则体做反向断言。
+  const ruleOnly = block.replace(/\/\*[\s\S]*?\*\//g, '')
+  assert.doesNotMatch(ruleOnly, /\[role="group"\]/, 'group 是模型面板，不许再写成 group')
+  assert.doesNotMatch(ruleOnly, /:has\(\[role="menuitemradio"\]\)/, '后代匹配会命中模型面板外壳，必须是直接子级')
 })
