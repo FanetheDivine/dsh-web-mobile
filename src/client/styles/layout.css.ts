@@ -73,6 +73,19 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     position: relative !important;
     grid-template-columns: minmax(0, 1fr) 0 0 !important;
     padding-top: env(safe-area-inset-top, 0px) !important;
+    /* Bottom safe area, symmetric with the top inset above. It MUST stay in
+       this rule: box-sizing: border-box is the pair that makes the padding eat
+       into the one-viewport height instead of adding scrollable overflow
+       (pitfalls §safe-area — padding without border-box pushes the composer
+       seat below the fold).
+       Why we have to own it: the third-party @linxin666 sheet (the same one
+       the grid-template-columns note above is about) ships this padding only
+       under (max-width: 768px), and the host ships none at all, so 769-1023px
+       touch devices had no bottom inset from either side and their content sat
+       in the system-bar band (issue #193). In the <=768px band that sheet's
+       declaration and this one are the same property with the same value, so
+       they do not stack. */
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
   }
 
   /* The sidebar column (first grid child) becomes a left drawer. The drawer
@@ -138,16 +151,33 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      the remaining 40px showed our own column background as a vertical strip
      along the right edge (measured: content right edge 280, column 320; the
      owner reported a white bar). The inner surface owns that band instead, so
-     the strip is filled by the drawer's real surface colour. */
+     the strip is filled by the drawer's real surface colour.
+     That scenario cannot recur as the layout stands: the column is
+     min(88vw, 280px), never wider than the 280px inner surface, so the
+     inequality that produced the band (column > surface) no longer holds at any
+     viewport width (measured 430/390/340/320 = flush at 280, 300 -> 264,
+     280 -> 246; a narrower column just crops the surface). The only change that
+     would bring it back is raising the column's upper bound past 280px, or the
+     host narrowing the inner surface below it. */
     /* The 40px band is a STACKING result, not a colour one: the drawer's inner
      surface is only 280px wide (host markup), while our column is 320px and
      carries z-index 1300 - so the column's own background paints OVER the
      surface's right 40px. Pixel-verified from a screenshot with the drawer open:
      x=10..270 rgb(249,250,251) (the surface) against x=285..315 rgb(255,255,255)
      (our white column). Repainting the column with the surface's own value makes
-     the seam invisible whatever the theme does; the surface underneath keeps its
-     own colour for the 280px it does cover. */
-    background: var(--dsw-alias-bg-surface, #f9fafb);
+     the seam invisible.
+     The value pinned here is the host's own drawer-fill token - the one
+     .pI_x6G_sidebarCol paints with: --dsw-specific-sidebar-fill, i.e.
+     --dsw-static-neutral-bluish-50 (#f9fafb) in light and
+     --dsw-static-neutral-bluish-900 (#1b1b1c) in dark. Pinning it, rather than
+     letting the host rule paint, keeps the band covered without depending on
+     cascade order. The fallback is deliberately the token's LIGHT value: if the
+     host ever renames this internal token the declaration degrades to today's
+     light behaviour instead of going unset, so it cannot get worse. Do not
+     "simplify" this back to --dsw-alias-bg-surface: that name is defined nowhere
+     in the host, which froze this rule on its fallback and painted the drawer
+     light in the dark theme (issue #192). */
+    background: var(--dsw-specific-sidebar-fill, #f9fafb);
     /* Drawer swipe gestures (edge swipe-in / content swipe-out, see
      docs/specs/2026-08-27-sidebar-swipe-gestures.md).
      One rule is load-bearing for the gesture layer: dropping pan-x on the
@@ -265,6 +295,18 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      so desktop keeps the host layout. */
   [data-sidebar-right-panel="fullscreen"] {
     padding-top: env(safe-area-inset-top, 0px) !important;
+  }
+
+  /* Phone chrome keeps only the collapse control. Split visibility must not
+     depend on data-dockkit-split-blocked: DockLayout measures after each commit,
+     so conditional display can alternate blocked/allowed at the width threshold.
+     Hide the wrapper too, since a blocked split wrapper is a tab stop. */
+  @media (max-width: 767px) and (pointer: coarse) {
+    [data-sidebar-right-panel] [data-dockkit-split-button],
+    [data-sidebar-right-panel] span:has(> [data-dockkit-split-button]),
+    [data-sidebar-right-panel] [data-sidebar-right-mode="push"] {
+      display: none !important;
+    }
   }
 
   /* prefers-reduced-motion: the drawer's .28s slide is motion; drop it
@@ -773,6 +815,24 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     margin-left: auto;
   }
   [data-phase] [class*="_card"]:has(textarea, [data-composer-input]) [class*="_row"]:has([class*="_trailing"]) > [class*="_trailing"]:has([class*="_trigger"][aria-haspopup="menu"], > [class*="_root"] > [class*="_trigger"][aria-haspopup="dialog"]) > [class*="_primary"] {
+    margin-left: 0;
+  }
+  /* Issue #191 — the subagent running form (stop + send, both _primary) has
+     NEITHER of the zeroing rule's two gates: ModelSelect renders nothing in an
+     addressed subagent session (no aria-haspopup="menu" in the lane) and the
+     meter lives in the card's dock row since rc.2 (no _root > dialog trigger
+     in the lane either). Both primaries therefore keep the auto margin from the
+     rule above, and flex SPLITS the free space between the two auto margins —
+     the stop key lands mid-lane with a void on both sides of it.
+     Same recipe as the model-present case (:707-712): zero every auto so no
+     element competes for the slack, and let justify-content pin the whole
+     cluster right. Zeroing alone would hug the LEFT edge instead, so both
+     halves are required. Scoped to the dual-primary form, so the main
+     session's single-primary path keeps its auto untouched. */
+  [data-phase] [class*="_card"]:has(textarea, [data-composer-input]) [class*="_row"]:has([class*="_trailing"]):has([class*="_primary"] ~ [class*="_primary"]) > [class*="_trailing"] {
+    justify-content: flex-end;
+  }
+  [data-phase] [class*="_card"]:has(textarea, [data-composer-input]) [class*="_row"]:has([class*="_trailing"]):has([class*="_primary"] ~ [class*="_primary"]) > [class*="_trailing"] > [class*="_primary"] {
     margin-left: 0;
   }
 
@@ -1630,6 +1690,44 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     padding: 0 !important;
     padding-left: 32px !important;
   }
+  /* --- 0.2.0-rc.x：header 变 grid，座位从 titleRow 内部搬到了 header 自己的第一列 ---
+     上面两条把「面板开关的 32px 座位」记在座位自己身上（padding-left）。在
+     0.1.6-alpha.2 里 headerLeading 是 titleRow 的第一个孩子，这个 padding 就是
+     titleRow 内容盒的起点，标题的 40px 落点是它直接算出来的。0.2.0-rc.x 把 header
+     改成 grid-template-columns: auto minmax(0,1fr)：座位成了 header 的直接孩子
+     （grid-area: 1/1），titleRow 独占第二列（grid-column: 2），于是标题的 40px 落点
+     变成「网格第一列恰好 32px」的副作用——座位一旦被谁塌掉（padding 被覆盖、宽度被
+     第三方归零、display 被藏），第一列就回到 0px，标题立刻压到 left:8 的圆形开关上。
+     2026-09-22 在 0.1.6 上实测过同一个失败面（座位被 padding 简写清零 → 第一列 0px
+     → crumbs x=8、toggle 8,6 28x28），当时靠把 padding-left 补回来止住；这一代改成
+     把座位记在标题行自己身上：padding-left 加在 titleRow 上（border-box，不撑破第二
+     列），座位格归零，标题落点不再依赖座位格存在、也不依赖它的宽度算得对不对。
+     判别式是「座位是不是 header 的直接孩子」——0.1.6 及更早座位在 titleRow 内部，
+     整块不命中，老规则原样管老宿主。
+     附带修掉一条静默漂移：老规则「header > :first-child > :last-child { display:none }」
+     在 0.1.5 藏的是会话日志胶囊；0.2.0 里 header 的第一格是座位，它最后一个孩子是
+     conversation.header.leading 槽的包装元素，整条规则于是变成「藏掉整个 leading 槽」
+     （实测：往槽里注入 28x28 按钮，计算盒 0x0）。手机档这一格是插件自己的抽屉开关
+     （绝对定位 left:8），槽里的控件必然和它叠在一起，所以「藏」的结果是对的、理由
+     一直没写下来；这里按槽名显式藏，别再靠 :last-child 误伤。
+     NOTE: 本文件整体是 JS 模板字符串，注释里绝不能出现反引号。 */
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]):has(> [data-conversation-header-leading]) > [data-conversation-header-leading] {
+    width: auto !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    gap: 0 !important;
+  }
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]):has(> [data-conversation-header-leading]) [data-slot="conversation.header.leading"] {
+    display: none !important;
+  }
+  /* 这里用 [class*="_titleRow"] 后缀形而不是邻近两条的 [class*="wSkVaW_titleRow"]：
+     全包只有 wSkVaW_titleRow 含这个片段（无前缀重叠，且已被 header:has 门控），
+     后缀形对哈希前缀改名免疫——座位记错地方的代价是标题静默压回开关上，不值得
+     为风格统一冒这个险。 */
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]):has(> [data-conversation-header-leading]) [class*="_titleRow"] {
+    box-sizing: border-box !important;
+    padding-left: 32px !important;
+  }
   /* 0.1.6 的新头部里，titleRow 的第一个孩子是新增的空座位
      headerLeading（macOS 桌面控件，安卓上渲染 null）。插件按 0.1.5 老结构
      写的「header > :first-child > :first-child { flex: 1 1 auto }」现在套在
@@ -2263,14 +2361,22 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     border-radius: 14px !important;
     animation: dsh-web-mobile-sheet-in .22s var(--ds-ease-out, ease-in-out);
   }
-  /* The settings sheet's dimmed mask fades in with the panel (the mask is
-     the first child of the overlay that directly contains the sheet). */
-  :has(> [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"])) > :first-child {
+  /* The settings sheet's dimmed mask fades in with the panel: the mask is the
+     overlay's first child, so it is reached as a direct child of the overlay
+     that holds the settings panel. The panel is identified by its stable
+     data-shortcut-modal="settings" marker (host value; the shortcut editor uses
+     "shortcut-edit" instead, so this cannot reach that family) plus
+     role/aria-modal. Keep the outer :has() ATTRIBUTE-ONLY: an earlier form
+     tested the panel's shape by nesting a :has() inside this one, which is an
+     invalid selector — Chromium dropped the entire rule without a word and the
+     fade never ran once (issue: settings mask, found 2026-09-27 and 2026-10-10).
+     scripts/css-structure-check.mjs now fails the build on nested :has(). */
+  :has(> [aria-modal="true"][data-shortcut-modal="settings"]) > [class*="_mask"] {
     animation: dsh-web-mobile-fade .18s var(--ds-ease-out, ease-in-out);
   }
   @media (prefers-reduced-motion: reduce) {
     [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]),
-    :has(> [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"])) > :first-child {
+    :has(> [aria-modal="true"][data-shortcut-modal="settings"]) > [class*="_mask"] {
       animation: none !important;
     }
   }

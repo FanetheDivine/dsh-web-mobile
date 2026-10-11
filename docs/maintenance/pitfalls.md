@@ -570,6 +570,8 @@ hero 态存在一个**空的、宿主隐藏但仍在文档流**的 session heade
 ### debug badge
 
 - **`?mobile-nav-debug=1` 的 debug badge 不能观察自己写入的子树**：badge 位于 `document.body` 内，而 `paint()` 写 `badge.textContent` 会产生 childList mutation；若 MutationObserver 直接以 `paint` 为回调，会把自身输出再次喂给 `paint()`，造成页面硬冻结（headless/真实浏览器都会卡在 "Loading plugins…"）。回调必须跳过 `badge` 自身及其子树上的 mutation（`record.target === badge || badge.contains(record.target)`），否则调试模式本身就是事故源。
+- **徽章的 build 串曾是不能判版本的写死常量（2026-10-10 修）**：该行原本硬编码 `build 20260919`（`src/client/debug.ts:47`），整个仓库再无第二处，导致徽章和 beacon 的 `build` 字段永远报同一个值——拿它判「手上跑的是哪版」必然错。现改为运行时读 bundle `rev`（与 `lib/client.js` 的 combo URL 同源），解析不出时显式报 `build rev ?` 而不是回退到旧常量。**判版本一律走产物前缀 sha1 或该 `rev`，别信任何写死的字符串**。
+- **`rev` 是批次级的，不是「我们插件」的版本号**：它由 `framedHash("combo", …)` 对整批插件算出（`dsh-client-modules/lib/index.js:162`，`HASH_REVISION_LENGTH = 12`），同批 58 个插件共用一个值——所以 `rev` 变化只能回答「这次重建落地了没有」，**不能**回答「我们的插件是哪个版本」。另外插件分两批下发：bootstrap 批拿到 `<script src>`，**application 批（含本插件）只有 `<link rel="preload" as="script">`**，而那条 `<script src>` 上的 `rev` 属于 client-modules、是另一个量——按 id 段扫 `<script>` 会抓错对象，两种标签都要扫。
 ### 反引号
 
 - **CSS 模板字符串注释内禁止反引号**：`src/client/styles/*.css.ts` 的 CSS 是 TypeScript 模板字面量，注释里写 Markdown 反引号会提前终止模板，tsc 报 `TS1005`。引用类名用普通引号或纯文本。
@@ -592,6 +594,9 @@ hero 态存在一个**空的、宿主隐藏但仍在文档流**的 session heade
 ### safe-area
 
 - **safe-area padding 与 `box-sizing: border-box` 必须成对出现**（frame `height:100%`+content-box 会把视口撑出 inset 滚动量、composer seat 沉到视口下——「跟随失效」是假象，错位的是外层 document；桌面 inset=0 复现不出，须 CDP 注入 47px 模拟；断言 scrollHeight-clientHeight===0 且 seat.bottom===innerHeight）→ `docs/maintenance/pitfalls.md` §safe-area。
+- **composer 底部 inset 曾在 769–1023px 档整段无人覆盖（#193，2026-10-10 修）**：`env(safe-area-inset-bottom)` 只在 `<html>` 那条 `@media (max-width: 768px)` 规则里被吃过，而那条规则**不属于本宿主**——它在第三方 `@linxin666` 包里（`APP_FRAME_SELECTOR = '[data-dsh-frame], [class*="_frame"]:has([class*="_centerCol"])'`）。本插件自身的移动档是 `(max-width: 1023px) and (pointer: coarse)`，于是 **769–1023px 的手持档**（小号平板、横屏手机、分屏）以及**没装那个第三方插件的任何环境**里，composer 底部 padding 恒为 0，seat 直接贴到系统手势条上。修法＝在本插件移动块里补 `padding-bottom: env(safe-area-inset-bottom, 0px) !important`（自门控：inset 为 0 时算出 0，桌面档无影响），与既有 `padding-top` 同规则、且该规则已有 `box-sizing: border-box`。
+- **判「某条 safe-area 规则是谁写的」必须按包名 grep，不能按「宿主肯定有」推定**：`grep -rn safe-area-inset-bottom <host 树>` 在 0.2.0-rc.2 的整个 `@deepseek-ai/dsh/` 下 **0 命中**，命中全在第三方包——这类「以为是宿主兜底」的假设直接决定修复归属与影响面判定（本轮 scout 与 checker 一度给出互相矛盾的归属结论，以逐包 grep 为准）。
+- **复现真机 inset 用 CDP `Emulation.setSafeAreaInsetsOverride`（已实证会改写 `env()` 解析值）**：headless 的 `env(safe-area-inset-*)` 恒 0，桌面档复现不出问题；注入 47px 后实测 800×1280 从 `padBottom 0px / seat.bottom===innerHeight` 变 `47px / 1233 / −47`，且 `scrollΔ=0`（不产生额外滚动）。**这是验证「env 修法是否真的生效」的唯一本机通道**——`matchMedia`、`getComputedStyle` 都不会报错，只有注入后读 rect 才分得清「规则在但值为 0」和「规则不在」。
 ### Files 面板 safe-area
 
 - **Files 列表面板（宿主 ui-sidebar-right）顶行压在手机状态栏下（2026-09-14）**：面板是宿主自己的全屏 fixed sheet（`[data-sidebar-right-panel=fullscreen]` → `position:fixed; inset:0`，z-index 40，自绘 `--dsw-alias-bg-base`），宿主 CSS 全程无 safe-area 处理，而 **fixed 元素的包含块是视口**——插件给 frame 加的 `padding-top: env(safe-area-inset-top)` 够不到它，顶行（tab 标签 / `+` / Split / 退出全屏）y=0…38 正好落在状态栏下。修复＝移动分支给**全屏形态**的面板本体吃 inset：`[data-sidebar-right-panel="fullscreen"] { padding-top: env(safe-area-inset-top, 0px) !important }`（layout.css 移动块）；成立前提是面板自绘背景（状态栏那一条不露底、无接缝）且为 border-box（padding 只下推内容，面板仍铺满视口）。**必须带 `="fullscreen"` 形态限定**：宿主另一种形态是停靠面板（820×1180 实测 `form=push`、`position:absolute`），它的包含块是 frame 的 padding box，本来就在状态栏下方，再吃一次 inset 会顶两次（探针场景 5 守此）。锚点 `scripts/probes/files-panel-safe-area-probe.mjs`（21 断言：规则在场且只在移动分支 / 规则选择器**命中活面板本体** / 宿主 fixed 全屏形态 + 自绘背景 / 模拟 inset 后整行按值下移、右缘不动、paneBody 不溢出 / 停靠形态不被规则命中且不双重 padding）→ `docs/maintenance/pitfalls.md` §Files 面板 safe-area。桌面零影响：规则在移动 media 块内，1280×720 `pointer:fine` 实测 `matches=false`。
@@ -654,7 +659,8 @@ hero 态存在一个**空的、宿主隐藏但仍在文档流**的 session heade
 
 ### 谓词复用与豁免
 
-- **共享谓词加豁免前必须逐个核对每个调用方的提问语义（#82，2026-09-22）**：`shouldCloseOnTapInsideDrawer` 被三方复用——click/pointerup 的「点行关抽屉」、`onDrawerPointerDown` 的「长按武装门」。#76/#81 往里加 DSHA 行早退（`[data-dsha-session-select]` → false）后，点行关被修好，长按武装被**静默连带**：DSHA 行 `pressTimer` 永不装填，宿主 ⋯ 行菜单在触屏上的唯一入口（长按）失效——而 `openRowMenu` 是既有「抽屉行菜单」坑位里修了三轮才立住的路径。铁律：给被多方复用的谓词加条件前，先列出全部调用方，逐个问「这条新条件对你的问题意味着什么」；提问语义不同就**拆谓词**，不要用布尔参数糊两个问题。#82 修法＝抽出无豁免的 `isDrawerNavTarget`（modal/抽屉开/行内/非按钮四守卫）作武装门，`shouldCloseOnTapInsideDrawer = !DSHA && base` 留给关抽屉两调用方。意图边界：3624af5 提交原文只说「这些行不参与点行关抽屉」——豁免扩到长按属事故不属设计。回归锚＝`tests/dsha-long-press-gate.test.ts`（源码契约断言：武装门不得路由经豁免谓词；豁免与 marker 字面量只活在关抽屉谓词里）。
+- **共享谓词加豁免前必须逐个核对每个调用方的提问语义（#82，2026-09-22）**：`shouldCloseOnTapInsideDrawer` 被三方复用——click/pointerup 的「点行关抽屉」、`onDrawerPointerDown` 的「长按武装门」。#76/#81 往里加 DSHA 行早退（`[data-dsha-session-select]` → false）后，点行关被修好，长按武装被**静默连带**：DSHA 行 `pressTimer` 永不装填，宿主 ⋯ 行菜单在触屏上的唯一入口（长按）失效——而 `openRowMenu` 是既有「抽屉行菜单」坑位里修了三轮才立住的路径。铁律：给被多方复用的谓词加条件前，先列出全部调用方，逐个问「这条新条件对你的问题意味着什么」；提问语义不同就**拆谓词**，不要用布尔参数糊两个问题。#82 修法＝抽出无豁免的 `isDrawerNavTarget`（modal/抽屉开/行内/非按钮四守卫）作武装门，`shouldCloseOnTapInsideDrawer = !DSHA && base` 留给关抽屉两调用方。意图边界：3624af5 提交原文只说「这些行不参与点行关抽屉」——豁免扩到长按属事故不属设计。回归锚＝`tests/dsha-session-interaction.test.ts`（历史源码契约断言）。
+- **DSHA 单击打开增补**：本代宿主没有 `sessions.open`，移动端在捕获 click 时把正常点行替换为宿主的 `detail=0` 程序化打开；不在 pointerup 提前导航，也不另关抽屉，由 `dsha-session-open` 通知负责收起。拖动、长按、行内菜单与 modal 让位。运行时处理函数回归见 `tests/mobile-navigation-behavior.test.ts`。
 
 ### 第三方模型条
 
@@ -686,6 +692,7 @@ hero 态存在一个**空的、宿主隐藏但仍在文档流**的 session heade
 - **实测（390×844，headless 真浏览器打真宿主）**：面板开着时 `elementFromPoint`(FAB 中心) 命中面板子节点（`hitInPanel: true`），真实 tap 后 `data-sidebar-collapsed` 仍为 true（抽屉没开）；同一次修复后：FAB `z-index: 55`、命中自身、tap 打开抽屉、Escape 关上。第 1 处 chip 的 A/B 同批跑（见「工作区 chip 再点关闭」）。
 - **修法**：`base.css.ts` 的 mobile「popover band」节加一条同形 gate——`body:has([data-sidebar-right-open][data-sidebar-right-panel="fullscreen"])` 下把本插件 FAB 抬到 **55**（本插件「抽屉之下」带：仍在遮罩 1250 / 抽屉 1300 之下，抽屉开着时照旧被盖住，不回退 09-13 的遮挡事故），并把 `[class*="_overlayLayer"]` 抬到 **1400**（与抽屉 gate 同值；两条 gate 同值时无论哪条胜出结果一样，不会出现「右侧栏开着反而把层压低到抽屉之下」）。**门必须带 `[data-sidebar-right-open]`**：`data-sidebar-right-panel="fullscreen"` 是展示档、面板关着也在（实测 restore 后仍在），只按它会把 band 常驻抬高、FAB 就会浮在打开的抽屉之上。docker 档（层 10）本来就低于 FAB 21，不进这条门。
 - **被否决**：把 FAB 抬到 1400（会浮在打开的抽屉上）；只抬 `_overlayLayer` 不抬 FAB（FAB 是 frame 子节点、不在该层里，实测 `fabChain[0] = pI_x6G_frame`)；降抽屉/遮罩 z（09-13 全黑事故）；按面板逐个打补丁（宿主的 fullscreen 档是通用形态）。回归锚＝`tests/overlay-layer-band.test.ts` 三条新断言（FAB 带值区间、overlayLayer 同值、门必须含 open 属性）。
+- **手机工具栏控件显隐不得依据测量结果反复改变测量对象**：`data-dockkit-split-blocked` 来自工具栏宽度判定，若只在该属性存在时 `display:none` 分栏键，隐藏后空间增大使其可用、恢复后空间不足又禁用，阈值附近会在每次 commit 的测量中形成两态循环。手机断点固定隐藏分栏及包装，保留收起键；平板和桌面保持原样。`tests/mobile-navigation-behavior.test.ts` 锁定规则不得依赖 blocked。
 ### 搬宿主 React 节点
 
 - **禁令：不要把宿主（或第三方 React 组件）渲染的节点搬出它渲染时的父节点**（#104 实锤，2026-09-24 修）。React 卸载该节点时按它自己记录的父容器调 `parent.removeChild(child)`，节点已被搬走就抛 `NotFoundError`。这个异常**不会出现在 uncaught 通道**——它被 `SlotErrorBoundary` 吞掉并把整个槽位渲染成空壳；运行时取证必须 hook `Node.prototype.removeChild` 数「child.parentNode !== this」的未命中（报障者方法，与 uncaught 监听互补）。
@@ -764,3 +771,11 @@ hero 态存在一个**空的、宿主隐藏但仍在文档流**的 session heade
 - **修法：行为级转发，不再依赖绘制顺序**。`effects/plugin-card-tap.ts` 在**捕获期**监听 `click`：命中条目根、又不在任何交互控件（`button`/`a`/`input`/…/`[role="switch"]`）上 ⇒ `preventDefault()` 后 `openButton.click()`；**点标题本身放过**（宿主自己会开，转发会双重触发），**开关一律不抢**。判定抽成零 import 纯核 `core/plugin-card-tap-core.ts` 由单测钉死，手机档由 `installMobileEffect` 门控。
 - **教训**：命中/点击这类问题，绘制顺序与层叠赢不了时改**行为级转发**——它是确定性的，不随宿主换代或引擎差异漂移。
 - 锚：`tests/plugin-card-tap.test.ts`（四种点击情形 + 选择器/捕获期/门控/接线不变式）。
+
+### header 座位归属
+
+- **预留座位必须记在消费方，不能记在会被别人塌掉的供给方（2026-10-11 issue #202，宿主 0.2.0-rc.x 换代）**。插件给抽屉开关（`left:8`，占 x 8..36）在头部预留 32px 座位，老写法把 `padding-left:32px` 加在**座位盒自己**（`_headerLeading`）身上：0.1.6-alpha.2 里 header 是 flex、座位是 titleRow 的第一个孩子，这个 padding 就是 titleRow 内容盒的起点，标题的 40px 落点是它**直接算出来**的；0.2.0-rc.x 把 header 改成 `grid-template-columns: auto minmax(0,1fr)`、座位升为 header 的直接孩子（`grid-area:1/1`）、titleRow 独占第二列（`grid-column:2`）之后，同一个 40px 落点退化成「网格第一列恰好 32px」的**副作用**——座位一旦被塌（padding 被覆盖 / 宽度被第三方归零 / display 被藏），第一列回 0px，标题立刻压到 left:8 的开关上（0.2.0-rc.2 实测 `crumbs x=8`、`toggle (8,6,28×28)`；同型前科 2026-09-22 在 0.1.6 上「座位被 padding 简写清零 → 第一列 0px」，同一失败面跨代复发）。**修法=座位改记在 titleRow 自己身上**（`box-sizing:border-box; padding-left:32px`）+ 座位盒归零：消费方自己的 padding 谁也抢不走，落点不再依赖座位格的存在与宽度。判据可推广：几何补偿挂在**会被布局约束的那一侧**，别挂在**别人随时能改的容器**上。
+- **两代通吃的判别式**：`header:has(> [data-conversation-header-leading])`——座位是 header 直接孩子的那一代才为真，0.1.6 及更早（座位在 titleRow 内部）结构性不命中。与既有代际门可叠成 `header:has([class*="_headerLeading"]):has(> [data-conversation-header-leading])` 一次满足两者——`tests/a2-header-gating.test.ts` 要求该代适配块里每条含 `[data-phase] header` 的选择器都带 `header:has([class*="_headerLeading"])`，新增规则同样受此约束。
+- **位置锚跨代会静默改义**：老规则 `header > :first-child > :last-child { display:none }` 本意藏 0.1.5 的会话日志胶囊；0.2.0 里 header 第一格是座位、其最后孩子是 `conversation.header.leading` 槽的包装元素 ⇒ 整条规则变成「藏掉整个 leading 槽」（注入 28×28 探针按钮实测计算盒 0×0）。结果凑巧无害（那格本来就是插件开关的座位），但理由错了、靠误伤成立——**改义后行为「看起来还对」是最难发现的一类**。跨代规则一律用语义锚（`[data-slot="…"]`、`[class*="_suffix"]`），不用 `:first-child`/`:last-child`。另注：`headerCorner` 是 titleRow 的第 3 个孩子、不在 header 第一格下，该老规则够不着它（报障者「这条规则藏了 headerCorner」的猜测不成立）。
+- **归因实验要证明修复是承重的**：用**同等或更高特异性**的注入样式强制塌掉座位盒——修复前 crumbs 落 x=8（压在 toggle 下），修复后保持 x=40。低特异性注入（`[class*="_headerLeading"]{padding:0!important}`）打不过插件规则，会给出假绿（本次第一轮即踩此坑）。
+- 锚：`scripts/probes/header-files-pin-probe.mjs` scene 4（座位塌陷后 titleCluster 仍 x=40 / toggle 28×28@(8,6) / files 36×36 右缘 382）；`tests/a2-header-gating.test.ts`「the 0.2.0 grid header carries its seat on the title row, not on the seat box」。
