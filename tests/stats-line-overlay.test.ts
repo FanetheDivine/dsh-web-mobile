@@ -12,6 +12,7 @@ import { readFile } from 'node:fs/promises'
 
 const src = await readFile(new URL('../src/client/effects/stats-line.ts', import.meta.url), 'utf8')
 const css = await readFile(new URL('../src/client/styles/compat.css.ts', import.meta.url), 'utf8')
+const layout = await readFile(new URL('../src/client/styles/layout.css.ts', import.meta.url), 'utf8')
 
 test('stats-line never relocates a host node (issue #104 contract)', () => {
   // The two historic movers: ring into the trailing row, TPS into the strip.
@@ -170,4 +171,16 @@ test('ring reserve box participates in both skip keys (stale-offset regression)'
   // 折叠后必须用「已知的占位槽」重新记 key，否则下一趟会白折一次
   assert.match(src, /fastKey = `\$\{box\}\|\$\{located === null \? 'none' : located\.live\}\|\$\{ringReserveBoxKey\(foldedRingReserve\)\}`/,
     '折叠后没有重建 key —— 下一趟未变化也会重新折叠')
+})
+
+// issue #176（F03）深色顶栏断层：宿主会话头部自带层色（实测深色 #232324），页面底色是
+// #151517（--dsw-alias-bg-base），手机档头部上方还有一条跟随页面底色的安全区带
+// ⇒ 三段断层。规则必须：① 只在手机档（本文件读的 LAYOUT_CSS 移动块内）；
+// ② 只在深色标记下生效；③ 用同一个 bg-base token 取色，跟着主题走。
+test('dark conversation header blends into the page background (issue #176)', () => {
+  assert.match(layout,
+    /body\[data-ds-dark-theme\] \[data-mobile-nav="frame"\] \[data-phase\] header,\s*\n\s*html\[data-ds-dark-theme\] \[data-mobile-nav="frame"\] \[data-phase\] header \{/,
+    '缺了深色头部同色的规则（body/html 两个深色标记都要覆盖）')
+  assert.match(layout, /background-color: var\(--dsw-alias-bg-base, #151517\) !important/,
+    '头部底色必须取页面底色的同一个 token，写死颜色会在换主题时失真')
 })
