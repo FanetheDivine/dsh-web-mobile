@@ -30,6 +30,32 @@ test('every selector in the alpha.2 header block carries the _headerLeading gene
   assert.ok(gates >= 30, `expected the full gated block, found only ${gates} gates`)
 })
 
+// 0.2.0-rc.x moved the leading seat out of the title row and made it the
+// header's own first grid column (grid-template-columns: auto minmax(0,1fr),
+// seat grid-area 1/1, title row grid-column 2). The 32px seat that keeps the
+// title clear of the toggle used to be titleRow's own content-box offset; on
+// that generation it degrades into "grid column 1 happens to be 32px", so any
+// rule that collapses the seat takes the title with it — measured on
+// 0.2.0-rc.2: crumbs x=8 under the toggle at (8,6,28x28), i.e. the same failure
+// the 2026-09-22 real-device run recorded on 0.1.6. The seat must therefore be
+// carried by the title row itself. Behaviour is pinned at runtime by scene 4 of
+// scripts/probes/header-files-pin-probe.mjs.
+test('the 0.2.0 grid header carries its seat on the title row, not on the seat box', () => {
+  const source = layoutSource()
+  const grid = '[data-phase] header:has([class*="_headerLeading"]):has(> [data-conversation-header-leading])'
+  assert.ok(source.includes(grid), 'the 0.2.0 grid-header gate is missing')
+  const titleRule = source.slice(source.indexOf(`${grid} [class*="_titleRow"] {`))
+  assert.ok(titleRule.startsWith(grid), 'title-row seat rule not found')
+  const declarations = titleRule.slice(0, 240)
+  assert.ok(declarations.includes('padding-left: 32px !important'), 'title row must carry the 32px seat')
+  assert.ok(declarations.includes('box-sizing: border-box !important'), 'border-box keeps the seat inside column 2')
+  assert.ok(source.includes(`${grid} > [data-conversation-header-leading] {`), 'the seat box itself must be zeroed')
+  assert.ok(
+    source.includes('[data-slot="conversation.header.leading"] {'),
+    'the leading slot must be hidden by slot name, not by a :last-child chain',
+  )
+})
+
 // The old position:static containment has higher specificity than the new
 // absolute chip rules; with both !important, specificity decides (not source
 // order), so on alpha.2 it must be excluded or the chips never leave the row.
