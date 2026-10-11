@@ -694,6 +694,37 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      effects/model-menu-anchor.ts centers the panel on the trigger and clamps it to the
      viewport. Do not re-add a CSS rule here without checking the portal parent. */
 
+  /* Phone reasoning-effort list is compact; the model catalog and the tablet stay
+     host-sized. Measured on the real host bundle (dsh-client-ui-model-selection
+     0.2.0-rc.2, 393x844, phone emulation): the effort pane renders 248px wide
+     (its own min-width is 240px) for six short options — visibly wider than any
+     of them needs.
+     The DOM of the effort pane (measured, same run):
+       DIV._surface_ri079_1._7KE1Ra_menu[role=group]   <- the menu shell
+         > DIV._material_ri079_21
+         > DIV._7KE1Ra_groups.scrollable[role=menu]    <- one wrapper level
+             > SECTION._group_121p8_1[role=group] > button[role=menuitemradio]
+     Three things follow from that shape, and each one alone has silently killed a
+     candidate selector:
+       · the shell's role is GROUP on this pane (the host sets
+         「role: pane === "model" ? "group" : "menu"」), not menu;
+       · the menuitemradio is a DESCENDANT of the shell, never its direct child
+         (the 「_groups > _group」 wrapper), so 「:has(> [role=menuitemradio])」
+         matches nothing;
+       · a bare 「[class*="_7KE1Ra_menu"]」 matches the inner 「_groups」 too, so the
+         role must be part of the selector to land on the shell.
+     The model catalog differs on exactly these points and carries a search box
+     (「input[role=searchbox]」) in the shell, hence the 「:not(:has(input))」 guard.
+     「min-width: 0 !important」 is load-bearing: without it the host's own
+     min-width 240px keeps the pane at 240 no matter what width is set. */
+  @media (max-width: 767px) and (pointer: coarse) {
+    [class*="_7KE1Ra_menu"][role="group"]:has([role="menuitemradio"]):not(:has(input)) {
+      width: min(208px, calc(100vw - 32px)) !important;
+      min-width: 0 !important;
+      max-width: calc(100vw - 32px) !important;
+    }
+  }
+
   /* --- Fix composer row overflow at narrow widths (320px-360px) ---
      Force every direct child of the tools and trailing lanes to shrink,
      so they can fit within the available space without causing horizontal

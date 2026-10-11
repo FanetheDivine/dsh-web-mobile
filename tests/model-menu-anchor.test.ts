@@ -14,6 +14,10 @@ const SRC = readFileSync(
   fileURLToPath(new URL('../src/client/effects/model-menu-anchor.ts', import.meta.url)),
   'utf8',
 )
+const LAYOUT = readFileSync(
+  fileURLToPath(new URL('../src/client/styles/layout.css.ts', import.meta.url)),
+  'utf8',
+)
 
 test('滚动/改变尺寸只重算缓存节点，绝不查询', () => {
   const start = SRC.indexOf('const follow = ')
@@ -44,4 +48,29 @@ test('菜单能放入视口时贴触发器右缘，越界时回退卡片居中',
   const start = SRC.indexOf('const place = ')
   const end = SRC.indexOf('const refresh = ', start)
   assert.ok(!SRC.slice(start, end).includes('querySelector'), 'place() 只能读取缓存锚点')
+})
+
+// 手机档「推理等级」面板收窄的选择器契约（2026-10-11，真机报障「手机上框太大」）。
+//
+// 真机量到的 DOM（dsh-client-ui-model-selection 0.2.0-rc.2，393×844，真实宿主包）：
+//   DIV._surface_ri079_1._7KE1Ra_menu[role=group]
+//     ├ DIV._material_ri079_21
+//     └ DIV._7KE1Ra_groups.scrollable[role=menu]
+//         └ SECTION._group_121p8_1[role=group] > button[role=menuitemradio]
+// 面板外壳是 group（宿主按 pane 决定 role）、menuitemradio 在外壳后代而非直接子级、
+// 且外壳无搜索框；模型目录那一路三条都相反并带 input[role=searchbox]。
+// 本测试钉住修正后的选择器形状——旧版 `[role="menu"]:has(> [role="menuitemradio"])`
+// 三个前提全不成立，浏览器实测零命中（面板仍是宿主默认 248px / min-width 240px）。
+test('手机档档位面板选择器匹配当前宿主的外壳形状', () => {
+  const at = LAYOUT.indexOf('Phone reasoning-effort list is compact')
+  assert.notEqual(at, -1, '档位面板规则丢失')
+  const block = LAYOUT.slice(LAYOUT.lastIndexOf('/*', at), LAYOUT.indexOf('/* --- Fix composer row overflow', at))
+  assert.match(block, /@media \(max-width: 767px\) and \(pointer: coarse\)/, '只在手机档生效')
+  assert.match(block, /\[class\*="_7KE1Ra_menu"\]\[role="group"\]/, '必须限定到菜单外壳（role=group）')
+  assert.match(block, /:has\(\[role="menuitemradio"\]\)/, 'menuitemradio 在外壳的后代里，不能用直接子级')
+  assert.match(block, /:not\(:has\(input\)\)/, '模型目录带搜索框，必须排除')
+  assert.match(block, /min-width: 0 !important/, '宿主 min-width:240px 不收窄就白改')
+  // 注释里引用了被证伪的旧写法，所以只对去掉注释的规则体做反向断言。
+  const ruleOnly = block.replace(/\/\*[\s\S]*?\*\//g, '')
+  assert.doesNotMatch(ruleOnly, /:has\(> \[role="menuitemradio"\]\)/, '直接子级版本已被实测证伪')
 })
