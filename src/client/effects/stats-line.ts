@@ -232,11 +232,32 @@ export function createStatsLineTask(): ReconcilerTask {
   // path, which runs on every tree mutation (scopes: the tree key).
   let relayoutRaf = 0
   let relayoutKey = ''
+  // The ring overlay's visual anchor is its reserve span, and that span lives in
+  // the composer card's trailing lane — NOT in the dock the stats strip sits in.
+  // The lane re-lays out on its own: measured 2026-10-11 on a live host session
+  // (393×844, a running turn), turning the send button into 「Stop generating +
+  // Steer message」 moved the reserve 310px -> 265px while the strip's own box did
+  // not move at all. A skip key built only from the strip box therefore skipped
+  // the pass, the ring kept its stale left/top and painted 45px off its slot —
+  // right on top of the Stop button (report: 「发送键旁边两个蓝色控件叠在一起」).
+  // So the reserve's box is part of both skip keys. The task's own rule is that a
+  // SKIPPED pass runs no query, so the fast path keys off the CACHED reserve
+  // element it folded last time instead of re-querying it: one extra rect read,
+  // still before any write and in the same read phase as the strip's own read, so
+  // it forces no additional layout. A rebuilt or detached reserve reads as a
+  // different box (or 0×0) and therefore forces the re-fold, which is intended.
+  const ringReserveBoxKey = (reserve: Element | null): string => {
+    if (reserve === null) return 'none'
+    const box = reserve.getBoundingClientRect()
+    return `${Math.round(box.left)}:${Math.round(box.top)}:${Math.round(box.width)}`
+  }
   const relayoutNow = (): void => {
     const anchor = document.querySelector('[data-mobile-nav="stats"]')
     if (anchor === null) return
     const rect = anchor.getBoundingClientRect()
-    const key = `${Math.round(rect.left)}:${Math.round(rect.top)}:${Math.round(rect.width)}:${Math.round(rect.height)}`
+    // The resize path may run before any mark() fold, so it resolves the ring
+    // reserve by query here; only the fast path is bound by the no-query rule.
+    const key = `${Math.round(rect.left)}:${Math.round(rect.top)}:${Math.round(rect.width)}:${Math.round(rect.height)}|${ringReserveBoxKey(document.querySelector('[data-mobile-nav="stats-ring-reserve"]'))}`
     if (key === relayoutKey) return
     relayoutKey = key
     // Same read-before-write ordering as mark()'s fast path.
@@ -298,7 +319,7 @@ export function createStatsLineTask(): ReconcilerTask {
       const rect = anchor.getBoundingClientRect()
       const box = `${Math.round(rect.left)}:${Math.round(rect.top)}:${Math.round(rect.width)}:${Math.round(rect.height)}`
       const located = locateTps(anchor)
-      const key = `${box}|${located === null ? 'none' : located.live}`
+      const key = `${box}|${located === null ? 'none' : located.live}|${ringReserveBoxKey(foldedRingReserve)}`
       if (
         key === fastKey &&
         stillFolded(foldedTps, 'stats-tps') &&
@@ -317,6 +338,11 @@ export function createStatsLineTask(): ReconcilerTask {
       foldedTpsReserve = located === null ? null : located.reserve
       foldedRing = ring === null ? null : ring.ring
       foldedRingReserve = ring === null ? null : ring.reserve
+      // Re-key with the reserve we just folded: the key above was built before the
+      // fold existed, so it could only say 'none' on the first pass — leaving the
+      // next (unchanged) pass to re-fold once for nothing. Re-keying here keeps the
+      // 「unchanged ⇒ skip」 invariant from the very first pass on.
+      fastKey = `${box}|${located === null ? 'none' : located.live}|${ringReserveBoxKey(foldedRingReserve)}`
       return
     }
     // Stale marker on a node that left the composer stack/phase context:

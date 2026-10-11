@@ -152,3 +152,22 @@ test('viewport relayout is coalesced and skips an unmoved anchor (2026-10-09 实
   assert.match(src, /cancelAnimationFrame\(relayoutRaf\)/)
   assert.match(src, /relayoutKey = ''/)
 })
+
+// 2026-10-11（真机会话复现）：宿主在「正在输出 + 已输入内容」时把发送键换成
+// 「Stop generating + Steer message」，composer 车道重排、我们的环形占位槽左移
+// （实测 310 -> 265px），而统计条所在 dock 的盒子一点没动。旧的跳过判据只看统计条
+// 盒子，于是整趟跳过、环保留旧 left/top，正好压在停止键上（12×20px 重叠）。
+// 两条判据一起钉住：环形占位槽的盒子必须参与「跳过」与「视口重排」两个 key。
+test('ring reserve box participates in both skip keys (stale-offset regression)', () => {
+  assert.match(src, /const ringReserveBoxKey = \(reserve: Element \| null\): string =>/,
+    '缺了取占位槽盒子的辅助函数')
+  // 快路径：key 必须带上已缓存的环形占位槽（不查询，沿用上一趟折过的节点）
+  assert.match(src, /const key = `\$\{box\}\|\$\{located === null \? 'none' : located\.live\}\|\$\{ringReserveBoxKey\(foldedRingReserve\)\}`/,
+    '快路径的跳过 key 没把环形占位槽算进去，环会停在旧坐标')
+  // 视口重排路径：同一条 key 也要带占位槽（这条路径没有缓存，允许查询）
+  assert.match(src, /Math\.round\(rect\.height\)\}\|\$\{ringReserveBoxKey\(document\.querySelector\('\[data-mobile-nav="stats-ring-reserve"\]'\)\)\}/,
+    '视口重排的 key 没把环形占位槽算进去')
+  // 折叠后必须用「已知的占位槽」重新记 key，否则下一趟会白折一次
+  assert.match(src, /fastKey = `\$\{box\}\|\$\{located === null \? 'none' : located\.live\}\|\$\{ringReserveBoxKey\(foldedRingReserve\)\}`/,
+    '折叠后没有重建 key —— 下一趟未变化也会重新折叠')
+})
