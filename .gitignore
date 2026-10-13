@@ -22,3 +22,8 @@ docs/handover/
 
 # 2026-09-17 composer DOM recon（与 settings-market-debug-map.md 同类：带日期的现场快照，不入库）
 docs/debug/composer-tree-recon.md
+
+# 仅本地保留的文档区（2026-10-13 用户要求：docs 下只上传 maintenance 与 debug）
+# audits = 带日期的审计快照，fork-wzxmt-zhc = 外部 fork 对账记录；两者都是过程产物
+docs/audits/
+docs/fork-wzxmt-zhc/
