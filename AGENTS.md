@@ -5,6 +5,7 @@
 - Single-package, client-only plugin for the DSH (DeepSeek Harness) Web UI. It adapts the web UI on **touch-primary devices with a viewport below 1024px** (overlay drawer, full-width conversation, adapted settings/explorer/preview sheets, status-bar safe areas, composer row, stats line). The activation query is `MOBILE_QUERY = '(max-width: 1023px) and (pointer: coarse)'` (platform/breakpoints.ts): width alone cannot distinguish a phone from a narrow desktop window — split views and OS display scaling push a PC's CSS viewport below 1024px too (2026-08-30 PC leak). A mouse-driven window (`pointer: fine`) or pointer-less one stays desktop at **every** width; the desktop hide block in misc.css.ts is the exact complement of MOBILE_QUERY as a comma list and hides the slot-rendered controls outside the mobile branch. ONE deliberate exception (v2.4.1): the session-delete trio (menu item + confirm/error dialog) arms on `TOUCH_QUERY = '(pointer: coarse)'` at EVERY width, so a large tablet in landscape keeps the desktop layout but still gets the 「删除会话」 item.
 - Names differ by boundary: README/GitHub project = `dsh-web-mobile`; npm package = `dsh-web-mobile`（2026-08-30 由 dsh-mobile-nav 改名而来，旧名连同 2.2.0/2.3.0 已整包 unpublish，npm 上不再存在）; patch row id = `dsh-web-mobile`（DOM 标记 `data-mobile-nav` 与 `?mobile-nav-debug=1` 参数刻意保留旧词根，见 Pitfalls）。
 - 已被 [DSHA](https://github.com/qiannianhuanxiang/DSHA)（Android 启动器）内置为移动端适配（README 已致谢 @qiannianhuanxiang，commit ffb61b5）——DSHA 用户装 APK 即用。
+- **v3.1.0 起重建线已并回主线**：2026-10-12 那段「改本仓库不影响线上页面」的判断**已失效**——v3.1.0（tag `v3.1.0` = `origin/main`）就是本仓库发的版，本机 web profile 已改回单插件形态（只跑 `dsh-web-mobile`），故**在本仓库改源码 + `pnpm build` 会直接影响用户正在用的页面**。那段并行分支 `dsh-web-mobile-host-test`（源码 `~/dsh-web-mobile-host-test`）是 v3.1.0 的**前身快照**，已不再装载，仅留作回滚件。发版口径：v3.1.0 走 GitHub Release，**未发 npm**（npm 仍停在 3.0.6）。
 - No monorepo, no application server, no workspace layer.
 - Real entrypoints:
   - `cordis.patch.yml` inserts the single host plugin row.
@@ -50,8 +51,8 @@
   ├─ tests/                  ← 59 个 .test.ts（node --test，type-stripping 直跑）
   ├─ docs/
   │  ├─ specs/               ← 8 篇权威设计文档（入库）
-  │  ├─ audits/ · maintenance/pitfalls.md · upstream/（runbook + compat-contracts.json + host-jank-feedback.md）· fork-wzxmt-zhc/
-  │  └─ debug/ · superpowers/ ← 本地不入库（例外：composer-tree-recon.md 与 settings-market-debug-map.md 已于 2026-09-25 入库）
+  │  ├─ maintenance/pitfalls.md · upstream/（runbook + compat-contracts.json + host-jank-feedback.md）← 入库
+  │  └─ audits/ · fork-wzxmt-zhc/ · debug/ · superpowers/ ← 本地不入库（2026-10-13 起 docs 下只上传 maintenance 与 debug）
   ├─ .github/workflows/ci.yml ← verify → test:core → build → bundle smoke → git diff --exit-code lib
   ├─ assets/                 ← README 用图
   └─ .local-tests/ · .codegraph/ · .dsh-vision-toolkit/  ← 本地不入库（gitignore 噪音区）
@@ -67,12 +68,12 @@
 - 改手势/面板退出等行为契约 → `docs/specs/`（8 篇权威 spec；手势参数与状态机在 2026-08-27-sidebar-swipe-gestures.md，不可破）
 - 宿主升级前 → `docs/upstream/upgrade-runbook.md`（对账清单与验收电池）+ `node scripts/cdp-compat-contracts.mjs`（机读契约自动对账，无需 SESSION_ID）
 - 评估宿主代际兼容面 → `docs/upstream/2026-09-23-dsh-0.1.7-alpha.2-compat-audit.md`（28 条对账 0 改的先例与方法）；升 0.1.6-alpha.2 系前必读 `docs/upstream/2026-09-19-dsh-0.1.6-alpha.2-compat-audit.md` §10（升级前必修 3 项 + 电池 15 项）
-- 宿主会话切换卡顿/性能归因 → `docs/audits/2026-09-23-session-switch-jank-handover.md`（归因 + 止血/上游两条路线）+ `docs/upstream/host-jank-feedback.md`（上游反馈通道，tokenizeTimeLimit 更正在此）
-- 0.1.7-rc.1 手机端适配待办 → `docs/audits/2026-09-23-0.1.7-rc.1-adaptation-handover.md`（容器内 chromium 取证通道 + A/B 与真机读数）
+- 宿主会话切换卡顿/性能归因 → `docs/upstream/host-jank-feedback.md`（上游反馈通道，tokenizeTimeLimit 更正在此；完整归因含止血/上游两条路线在本地 audits 目录的同名 handover，该目录不上传）
+- 0.1.7-rc.1 手机端适配待办 → 本地 audits 目录的同名 handover（容器内 chromium 取证通道 + A/B 与真机读数；audits 目录不上传，仅本机可读）
 - 手机端会话头部/输入框 0.1.6 适配 → `docs/upstream/2026-09-19-mobile-header-0.1.6-adaptation.md`（16 条，14 已并入 layout 移动块）
 - 新增或修改兼容补丁 → `docs/maintenance/patch-registry.md`（每个补丁必须在源码用 @patch 块自报 for/why/until/test；表由 `node scripts/patch-registry-check.mjs --write` 生成，手改即红）
-- CSS 结构回归 → `docs/audits/2026-09-15-css-surface-audit.md`（结构检测器已接入 `test:core`，基线 0 fatal / 5 info；缩进/媒体查询/选择器拆分回归会红）
-- 接手 fork wzxmt-zhc 摘抄专项 → `docs/fork-wzxmt-zhc/README.md`（先读接手协议，动手前重新 fetch fork）
+- CSS 结构回归 → 结构检测器已接入 `test:core`（基线 0 fatal / 5 info；缩进/媒体查询/选择器拆分回归会红），完整审计在本地 audits 目录（不上传）
+- 接手 fork wzxmt-zhc 摘抄专项 → 本地 `docs/fork-wzxmt-zhc/README.md`（先读接手协议，动手前重新 fetch fork；该目录不上传，仅本机可读）
 
 ## Commands
 
@@ -169,7 +170,7 @@ dsh web
   - Reconciler task modules: `preview-fullscreen.ts`, `overlay-backdrop-fab.ts`, `panel-exit.ts`.
 - Styles: `src/client/styles/index.ts` concatenates `base → layout → compat → misc` in that load-bearing order and injects one `<style data-plugin>` tag. Mobile rules target `(max-width: 1023px) and (pointer: coarse)` (keep every top-level media block in sync with `MOBILE_QUERY`); the desktop hide block in misc.css.ts is its exact complement and must preserve the uninstalled layout.
 - Third-party compatibility is implemented through scoped DOM markers, stable `data-*` attributes, `MutationObserver`, and carefully scoped class/text anchors. Never modify third-party source packages.
-- Authoritative design docs: `docs/specs/2026-08-27-sidebar-swipe-gestures.md` (gesture parameters/state machine) and `docs/audits/2026-08-27-sidebar-swipe-latent-defects.md` (gesture defect baseline).
+- Authoritative design docs: `docs/specs/2026-08-27-sidebar-swipe-gestures.md` (gesture parameters/state machine; the gesture defect baseline lives in the local-only audits directory).
 
 ## Workflow
 
@@ -305,7 +306,7 @@ dsh web
 
 ## Maintenance
 
-- **fork wzxmt-zhc 对账/摘抄专项文档**：`docs/fork-wzxmt-zhc/` —— README（对账快照 + 接手协议）、`backlog.md`（摘抄清单与决策，三档：直接摘/对账合并/参考不摘）、`log.md`（推进日志，做完一步记一条）。接手该专项先读 README；动手前必须重新 fetch fork（未配置 remote，命令在 README 接手协议里），快照会过时。
+- **fork wzxmt-zhc 对账/摘抄专项文档（本地不上传）**：`docs/fork-wzxmt-zhc/` —— README（对账快照 + 接手协议）、`backlog.md`（摘抄清单与决策，三档：直接摘/对账合并/参考不摘）、`log.md`（推进日志，做完一步记一条）。接手该专项先读 README；动手前必须重新 fetch fork（未配置 remote，命令在 README 接手协议里），快照会过时。**该目录 2026-10-13 起不进 git**（用户要求 docs 下只上传 maintenance 与 debug），只在本机可读。
 - This file is a living reference. Whenever you discover a new repo-specific command, convention, or pitfall, update it in place.
 - **体积门槛（2026-09-18 起）**：本文件受工作区指令预算 ~64 KB 限制，超了会被**静默截尾**（末尾内容每轮丢失；实测 65,443 B 时 `## 维护入口` 末条长期读不到）。所以这里只写命令、约定、契约、触发词索引与一两行的铁律；凡是「说不清、要摆证据」的内容一律进 `docs/`（坑位 → `docs/maintenance/pitfalls.md`，设计 → `docs/specs/`，审计 → `docs/audits/`），本文件只留一行指针。
 - **知识去向（用户偏好，2026-09-18 拍板）**：零碎的规矩 / 要求 / 偏好 → **写进本文件对应节**，不要只存进记忆（记忆跨会话，但它不能替代仓库文档，而本文件是每个会话都必然读到的那份）；需要推导 / 证据 / 大段流程 / 实测数字的内容 → `docs/`（坑位 → `pitfalls.md`，设计 → `specs/`，审计 → `audits/`，调试考古 → `debug/`，上游契约 → `upstream/`）。记忆只留「跨会话需要主动回忆的教训」，且不得成为某条规矩的唯一存放处。
@@ -320,6 +321,7 @@ dsh web
 ## 维护入口
 
 - **GitHub Release 文案规格（用户要求，2026-09-20）**：Release notes 照 v2.4.1/v2.3.0 文章体例，不许直接贴 README 段落——`## vX.Y.Z · 一句话摘要` 开头 + 导语段（本版是什么、桌面 no-op 承诺、旧宿主回退建议）+ **致谢行必写**（v2.4.0 体例：「特别感谢合作人 @x（PR #63/#65：具体贡献）」+ 社区贡献与报障逐个 `@handle（#NN 报障 / PR #NN）`；条目标题带 `（#NN by @handle）`归属。署名从 GitHub 实测取：PR author + commit author + issue reporter，且只列修复确实落在本 tag 区间的——用 close 日期、closed_by 提交、`git log vA..vB` 引用三路核对，未合并的 PR 与仍 open 的报障不计）+ `### 安装`（DSHA 一句 + npm 代码块 + GitHub 直装行 + 旧名迁移提示）+ `### 新功能` / `### 修复`（`**症状**：根因 + 修法` 句式）+ `### 兼容`（宿主代际范围 + 已实装验证的第三方版本号）+ `### 完整提交`（提交少时逐条 short-hash；大版本列里程碑提交，收尾必带 `compare/vA...vB` 完整变更对比链接）。**README「更新内容」段发版时同步写**（2026-09-25 用户拍板；版本合并补发时按「上游 tag 之后所有改动并入本版」口径整理，Release notes 仍单独写、不贴 README 段落）。
+- **README 版本段必须覆盖同一版本线的全部 pre-release（用户要求，2026-10-13 纠错）**：Release notes 是按 tag 分页的（`.../releases/tag/vX.Y.Z` 与 `.../releases/tag/vX.Y.Z-rc.N` 是两页），写某一版的 README「更新内容」前，先把该版本线的**每个 tag 页都取回**（rc / beta / alpha 逐个），与最高版本那页做 diff —— 多数情况下后者是前者的超集，这时按最高版写即可；**只要 diff 出 pre-release 独占条目，就必须一并写进该版的段里**（2026-10-13 实测：v3.1.0 页相对 v3.1.0-rc.1 页仅多一条 C08，零删除行 = rc.1 是其真子集）。不许只读最高版那一页就动笔，也不许凭「我是按 Release 写的」推定已覆盖——推定不算数，要 diff。
 
 - CI：`.github/workflows/ci.yml`——verify → test:core → build → **`node scripts/client-bundle-smoke.mjs`（白屏门，2026-10-07 接入）** → `git diff --exit-code lib`（lib 新鲜度门）。**本地照抄这条会假绿**：它比的是**工作区↔索引**，`git add` 之后恒真，源码没提交也能过（本分支出过两个只装 `lib/` 的提交）。本地正确判据＝源码与 `lib/` 同一提交 → 再 `pnpm build` → `git diff --exit-code HEAD -- lib`；另加 `git status --porcelain --ignored lib` 必须为空（`git diff` 看不见未跟踪孤儿产物，而 tsc 从不清理 outDir）。**推 `fix/*` 分支不触发任何 CI**（workflow 只监听 main + PR），所以「推上去了」≠「被检查过」。
 - 引擎底线：`package.json` engines `node >=24.0.0`（tests 依赖 Node 原生 TS type-stripping）。
