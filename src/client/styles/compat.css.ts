@@ -1303,6 +1303,57 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
      不会把表格撑到无法阅读的宽度。
      平板（768–1023）与桌面不动 —— 店主明确「平板不用」（对齐上游 768px
      分档边界，与 layout.css.ts 的手机档写法一致）。 */
+  /* @patch
+     id: ofm-mobile-cost-ceiling
+     for: dsh-our-free-model 2.0.0 的 ofm_ 私有类名（毛玻璃表面 + 极光层 + 装饰动画）
+     why: 上游把设置页做成一张超长 backdrop-filter 大面 + 常驻全屏极光，插件侧没有手机档成本降级，本插件只能用自己的手机档样式兜
+     until: 上游自己给手机档出成本降级（或拿掉极光层与 blur 表面）——届时本块整节删除
+     test: tests/our-free-model-cost.test.ts
+  */
+  /* ---------- dsh-our-free-model: mobile cost ceiling ----------
+     该插件设置页在手机上卡顿掉帧。实测数字、驱动限制与验证方法见
+     docs/maintenance/pitfalls.md「第三方成本上限」——这里只记为什么这么写。
+
+     选择器用裸的 ofm_ 前缀类名，不加任何祖先锚。设置页经 createPortal 挂到
+     document.body，[data-mobile-nav="frame"] 后代选择器一个都不命中；而
+     .ofm_scrim 与 .ofm_toast 也 portal 到 body，锚 .ofm_root 同样漏。前缀是
+     本插件独占（宿主与全仓 0 命中），锚根买不到隔离，只赔掉 portal 出去的那几块。
+
+     只砍装饰，且按「遮罩 vs 表面」分两组——同一个「去 blur」动作，两类需要相反
+     的补法：表面按半透明设计，只摘 filter 会让页面从下面透出来，故补不透明底；
+     .ofm_scrim 是蒙层，补底等于把整页涂黑，故只摘 filter。
+
+     带状态的动画一律保留（loading 骨架、池子 busy/over 点、状态点、进度条、
+     aria-busy 按钮）。.ofm_scanline 看着像装饰，实则挂在登录等待提示上，上游
+     自己的 prefers-reduced-motion 块也不杀它。
+
+     本块在顶层手机档（≤1023px + pointer: coarse），触屏平板也吃到——有意为之：
+     这是成本修复不是布局修复，与屏宽无关。 */
+  .ofm_aurora {
+    display: none !important;
+  }
+  .ofm_wave,
+  .ofm_bubble,
+  .ofm_fish,
+  .ofm_tankrays {
+    animation: none !important;
+  }
+  .ofm_nav,
+  .ofm_glass,
+  .ofm_hero,
+  .ofm_panel,
+  .ofm_ann,
+  .ofm_modal,
+  .ofm_toast {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background: var(--dsw-alias-bg-layer-2, #fff) !important;
+  }
+  .ofm_scrim {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
   @media (max-width: 767px) and (pointer: coarse) {
     [data-mobile-nav="frame"] .md-table-wide {
       overflow-x: auto !important;
